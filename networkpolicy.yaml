@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restaurant-company
+  namespace: restaurant-prod
+
+spec:
+  podSelector:
+    matchLabels:
+      app: restaurant-company
+
+  policyTypes:
+    - Ingress
+
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 80
