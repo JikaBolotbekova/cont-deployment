@@ -7,7 +7,7 @@ pipeline {
 
         // AWS / EKS
         AWS_REGION = "us-east-1"
-        EKS_CLUSTER = "restaurant-company"
+        EKS_CLUSTER = "eks-test"
 
         // Kubernetes
         NAMESPACE = "restaurant-company"
