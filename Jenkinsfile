@@ -10,7 +10,7 @@ pipeline {
         EKS_CLUSTER = "eks-test"
 
         // Kubernetes
-        NAMESPACE = "restaurant-company"
+        NAMESPACE = "restaurant-prod"
         DEPLOYMENT_NAME = "restaurant-company"
     }
 
