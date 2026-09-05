@@ -17,11 +17,6 @@ pipeline {
             steps {
                 echo 'Checking out CD repository...'
                 checkout scm
-
-                sh '''
-                    echo "========== FILES IN WORKSPACE =========="
-                    ls -la
-                '''
             }
         }
 
@@ -48,10 +43,10 @@ pipeline {
         stage('3. AWS Authentication') {
             steps {
                 withCredentials([
-                    usernamePassword(
+                    aws(
                         credentialsId: 'aws-credentials',
-                        usernameVariable: 'AWS_ACCESS_KEY_ID',
-                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
                     )
                 ]) {
                     sh '''
@@ -65,10 +60,10 @@ pipeline {
         stage('4. Connect to EKS') {
             steps {
                 withCredentials([
-                    usernamePassword(
+                    aws(
                         credentialsId: 'aws-credentials',
-                        usernameVariable: 'AWS_ACCESS_KEY_ID',
-                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
                     )
                 ]) {
                     sh '''
@@ -81,7 +76,7 @@ pipeline {
                         echo "Current Kubernetes context:"
                         kubectl config current-context
 
-                        echo "Worker nodes:"
+                        echo "Cluster nodes:"
                         kubectl get nodes
                     '''
                 }
@@ -91,9 +86,8 @@ pipeline {
         stage('5. Create Namespace') {
             steps {
                 sh '''
-                    echo "========== NAMESPACE =========="
+                    echo "========== CREATE NAMESPACE =========="
                     kubectl apply -f namespace.yaml
-                    kubectl get namespace $NAMESPACE
                 '''
             }
         }
@@ -101,7 +95,7 @@ pipeline {
         stage('6. Apply Configuration') {
             steps {
                 sh '''
-                    echo "========== CONFIGURATION =========="
+                    echo "========== APPLY CONFIGURATION =========="
 
                     kubectl apply -f configmap.yaml -n $NAMESPACE
                     kubectl apply -f secrets.yaml -n $NAMESPACE
@@ -126,8 +120,23 @@ pipeline {
                 sh '''
                     echo "========== PRODUCTION RESOURCES =========="
 
-                    kubectl apply -f pdb.yaml -n $NAMESPACE
-                    kubectl apply -f networkpolicy.yaml -n $NAMESPACE
+                    if [ -f hpa.yaml ]; then
+                        kubectl apply -f hpa.yaml -n $NAMESPACE
+                    else
+                        echo "hpa.yaml not found - skipping"
+                    fi
+
+                    if [ -f pdb.yaml ]; then
+                        kubectl apply -f pdb.yaml -n $NAMESPACE
+                    else
+                        echo "pdb.yaml not found - skipping"
+                    fi
+
+                    if [ -f networkpolicy.yaml ]; then
+                        kubectl apply -f networkpolicy.yaml -n $NAMESPACE
+                    else
+                        echo "networkpolicy.yaml not found - skipping"
+                    fi
                 '''
             }
         }
@@ -135,9 +144,13 @@ pipeline {
         stage('9. Apply Ingress') {
             steps {
                 sh '''
-                    echo "========== INGRESS =========="
+                    echo "========== APPLY INGRESS =========="
 
-                    kubectl apply -f ingress.yaml -n $NAMESPACE
+                    if [ -f ingress.yaml ]; then
+                        kubectl apply -f ingress.yaml -n $NAMESPACE
+                    else
+                        echo "ingress.yaml not found - skipping"
+                    fi
                 '''
             }
         }
@@ -161,20 +174,17 @@ pipeline {
                     echo "========== PODS =========="
                     kubectl get pods -n $NAMESPACE -o wide
 
-                    echo "========== DEPLOYMENT =========="
-                    kubectl get deployment -n $NAMESPACE
+                    echo "========== DEPLOYMENTS =========="
+                    kubectl get deployments -n $NAMESPACE
 
-                    echo "========== SERVICE =========="
-                    kubectl get service -n $NAMESPACE
+                    echo "========== SERVICES =========="
+                    kubectl get services -n $NAMESPACE
 
                     echo "========== INGRESS =========="
-                    kubectl get ingress -n $NAMESPACE
+                    kubectl get ingress -n $NAMESPACE || true
 
-                    echo "========== PDB =========="
-                    kubectl get pdb -n $NAMESPACE
-
-                    echo "========== NETWORK POLICY =========="
-                    kubectl get networkpolicy -n $NAMESPACE
+                    echo "========== HPA =========="
+                    kubectl get hpa -n $NAMESPACE || true
                 '''
             }
         }
@@ -183,29 +193,26 @@ pipeline {
     post {
 
         success {
-            echo '''
-========================================
-       DEPLOYMENT SUCCESSFUL
-========================================
-            '''
+            echo '======================================'
+            echo 'DEPLOYMENT SUCCESSFUL'
+            echo '======================================'
         }
 
         failure {
-            echo '''
-========================================
-        DEPLOYMENT FAILED
-========================================
-Check Jenkins stage and Kubernetes events.
-            '''
+            echo '======================================'
+            echo 'DEPLOYMENT FAILED'
+            echo '======================================'
 
             sh '''
-                echo "========== POD STATUS =========="
+                echo "========== TROUBLESHOOTING =========="
+
                 kubectl get pods -n $NAMESPACE || true
 
                 echo "========== RECENT EVENTS =========="
                 kubectl get events \
                     -n $NAMESPACE \
-                    --sort-by=.lastTimestamp | tail -30 || true
+                    --sort-by=.metadata.creationTimestamp \
+                    | tail -30 || true
             '''
         }
 
